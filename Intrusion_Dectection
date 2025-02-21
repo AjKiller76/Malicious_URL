@@ -1,0 +1,58 @@
+import scapy.all as scapy
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.preprocessing import LabelEncoder
+import threading
+
+# Global model variable
+model = None
+
+# Sample dataset for training (Normally, you'd collect real network data)
+data = {
+    "packet_size": [100, 200, 300, 150, 400, 600, 250, 350],
+    "protocol": ["TCP", "UDP", "TCP", "ICMP", "TCP", "UDP", "ICMP", "TCP"],
+    "anomaly": [0, 0, 1, 0, 1, 1, 0, 1]  # 1 = Intrusion, 0 = Normal
+}
+
+# Convert to DataFrame
+df = pd.DataFrame(data)
+
+# Encode protocol
+encoder = LabelEncoder()
+df["protocol"] = encoder.fit_transform(df["protocol"])
+
+# Split data
+X = df.drop("anomaly", axis=1)
+y = df["anomaly"]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Naïve Bayes classifier
+model = GaussianNB()
+model.fit(X_train, y_train)
+
+# Function to process packets
+def process_packet(packet):
+    if packet.haslayer(scapy.IP):
+        pkt_size = len(packet)
+        proto = packet[scapy.IP].proto  # Protocol (TCP=6, UDP=17, ICMP=1)
+
+        # Prepare data for prediction
+        pkt_data = np.array([[pkt_size, proto]])
+        prediction = model.predict(pkt_data)
+
+        if prediction[0] == 1:
+            print(f"ALERT! Intrusion detected: Size={pkt_size}, Protocol={proto}")
+        else:
+            print(f"Normal Packet: Size={pkt_size}, Protocol={proto}")
+
+# Function to start live packet capture
+def start_sniffing():
+    print("Starting Packet Sniffing...")
+    scapy.sniff(filter="ip", prn=process_packet, store=False)
+
+# Run sniffing in a separate thread
+sniff_thread = threading.Thread(target=start_sniffing)
+sniff_thread.start()
